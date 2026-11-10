@@ -1,1 +1,9 @@
 .superpowers/
+.env
+data/
+*.session
+spikes/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

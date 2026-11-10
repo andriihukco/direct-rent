@@ -32,9 +32,14 @@ def extract_phones(text: str) -> list[str]:
     return out
 
 
-def extract_contacts(text: str, author: list[Contact]) -> list[Contact]:
-    """Phones and @usernames from the text plus the author's contacts, deduplicated."""
+def extract_contacts(text: str, author: list[Contact], ignore: frozenset[str] | set[str] = frozenset()
+                     ) -> list[Contact]:
+    """Phones and @usernames from the text plus the author's contacts, deduplicated.
+
+    Handles in `ignore` (the channel's own username) and bot handles are channel signatures, not contacts.
+    """
     found = [Contact("phone", p) for p in extract_phones(text)]
-    found += [Contact("tg_username", u.lower()) for u in _USERNAME.findall(text)]
+    found += [Contact("tg_username", u) for u in (h.lower() for h in _USERNAME.findall(text))
+              if u not in ignore and not u.endswith("bot")]
     found += author
     return list(dict.fromkeys(found))

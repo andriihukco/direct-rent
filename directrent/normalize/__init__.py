@@ -9,7 +9,7 @@ def normalize(raw: RawPost, usd_rate: float) -> Listing:
     return Listing(
         source=raw.source, source_id=raw.source_id, url=raw.url, text=raw.text,
         posted_at=raw.posted_at, channel_title=raw.channel_title,
-        contacts=extract_contacts(raw.text, raw.author_contacts),
+        contacts=extract_contacts(raw.text, raw.author_contacts, ignore={raw.source_id.rpartition(":")[0].lower()}),
         price_uah=price_uah, price_raw=price_raw, rooms=parse_rooms(raw.text),
         district=parse_district(raw.text), street=parse_street(raw.text), pets=parse_pets(raw.text),
         photo_bytes=raw.photo_bytes, photo_url=raw.photo_url,

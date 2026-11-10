@@ -8,8 +8,8 @@ from datetime import datetime, timedelta
 import asyncpg
 
 from directrent.antibroker.llm import DailyBudget, LlmClassifier, LlmError, LlmResult
-from directrent.antibroker.reputation import check_reputation
-from directrent.antibroker.rules import classify_rules
+from directrent.antibroker.reputation import check_reputation, shared_contacts
+from directrent.antibroker.rules import classify_rules, pre_screen
 from directrent.dedup import find_or_create_object, photo_hash, seen
 from directrent.models import Decision, Listing, RawPost, Verdict
 from directrent.normalize import normalize
@@ -56,6 +56,7 @@ def _fill_missing(listing: Listing, r: LlmResult) -> None:
 
 async def process(pool: asyncpg.Pool, raw: RawPost, llm: LlmClassifier, budget: DailyBudget,
                   usd_rate: float, now: datetime, enqueue: Enqueue | None = None) -> ProcessResult | None:
+    """One worker calls this sequentially; the LLM call runs outside any DB transaction."""
     if enqueue is None:
         from directrent.matcher import enqueue as default_enqueue
         enqueue = default_enqueue
@@ -65,17 +66,29 @@ async def process(pool: asyncpg.Pool, raw: RawPost, llm: LlmClassifier, budget: 
         if await seen(conn, raw.source, raw.source_id):
             return None
         listing = normalize(raw, usd_rate)
-        if listing.photo_bytes:
-            listing.photo_hash = photo_hash(listing.photo_bytes)
+        object_id: int | None = None
+        decision = pre_screen(listing.text, listing.price_uah is not None, listing.rooms is not None,
+                              bool(listing.photo_bytes))
+        if decision is None:
+            if listing.photo_bytes:
+                listing.photo_hash = photo_hash(listing.photo_bytes)
+            async with conn.transaction():
+                phones = {c.value for c in listing.contacts if c.kind == "phone"}
+                shared = await shared_contacts(conn, listing.contacts, phones)
+                keyed = [c for c in listing.contacts if c not in shared]
+                object_id = await find_or_create_object(conn, listing, keyed)
+                decision = await check_reputation(conn, keyed, object_id) or classify_rules(listing.text)
+        if decision is None:
+            decision, result = await _ask_llm(llm, budget, listing, now)
+            if result:
+                _fill_missing(listing, result)
+        if decision.verdict == Verdict.REJECT:
+            listing.photo_bytes = None  # never sent, so never stored
         async with conn.transaction():
-            object_id = await find_or_create_object(conn, listing)
-            decision = await check_reputation(conn, listing.contacts, object_id) or classify_rules(listing.text)
-            if decision is None:
-                decision, result = await _ask_llm(llm, budget, listing, now)
-                if result:
-                    _fill_missing(listing, result)
             listing_id = await save_listing(conn, listing, object_id, decision)
             queued = 0 if decision.verdict == Verdict.REJECT else await enqueue(conn, listing_id)
+            if queued == 0 and listing.photo_bytes:
+                await conn.execute("UPDATE listings SET photo_bytes = NULL WHERE id = $1", listing_id)
     log.info(json.dumps({"event": "verdict", "source": raw.source, "source_id": raw.source_id,
                          "verdict": decision.verdict.value, "stage": decision.stage, "reason": decision.reason,
                          "queued": queued}, ensure_ascii=False))

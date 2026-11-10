@@ -55,6 +55,11 @@ async def mark_processed(pool: asyncpg.Pool, raw: RawPost) -> None:
     )
 
 
+def is_post(msg) -> bool:
+    """A message with text or a photo. Service messages (joins, pins) have no .message at all."""
+    return bool(getattr(msg, "message", None) or getattr(msg, "photo", None))
+
+
 def chat_key(chat_id: int) -> int:
     """Telethon event chat ids are 'marked' (-100… for channels); entity ids are not."""
     return utils.resolve_id(chat_id)[0]
@@ -89,7 +94,8 @@ class TelegramSource:
         async for m in self.client.iter_messages(entity, min_id=last, limit=BACKFILL_LIMIT):
             if m.date < cutoff:
                 break
-            batch.append(m)
+            if is_post(m):
+                batch.append(m)
         groups: dict[object, list] = {}
         for m in sorted(batch, key=lambda m: m.id):
             groups.setdefault(m.grouped_id or ("single", m.id), []).append(m)
@@ -105,19 +111,21 @@ class TelegramSource:
             ent = await self.client.get_entity(name)
             self._names[ent.id] = (getattr(ent, "username", None) or name, getattr(ent, "title", name))
             entities.append(ent)
-        for ent in entities:
-            await self._backfill(ent, self._names[ent.id][0])
 
         async def on_message(event) -> None:
-            if event.message.grouped_id is None:
+            if event.message.grouped_id is None and is_post(event.message):
                 await self._emit([event.message], chat_key(event.chat_id))
 
         async def on_album(event) -> None:
             await self._emit(list(event.messages), chat_key(event.chat_id))
 
+        # Listen first, then backfill: posts arriving during backfill are caught live, and seen()
+        # plus the unique source id absorb any overlap.
         self.client.add_event_handler(on_message, events.NewMessage(chats=entities))
         self.client.add_event_handler(on_album, events.Album(chats=entities))
         try:
+            for ent in entities:
+                await self._backfill(ent, self._names[ent.id][0])
             await self.client.run_until_disconnected()
         finally:
             self.client.remove_event_handler(on_message)

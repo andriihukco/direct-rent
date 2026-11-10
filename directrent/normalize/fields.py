@@ -18,19 +18,30 @@ def _int(s: str) -> int:
     return int(re.sub(r"\D", "", s))
 
 
+_NOT_RENT = re.compile(r"(?:депозит|застав|комунал|комуналк|залог|коммунал)\w*\W{0,15}$", _I)
+
+
 def parse_price(text: str, usd_rate: float) -> tuple[int | None, str | None]:
-    """Monthly rent in UAH and the raw matched text, or (None, None)."""
-    candidates: list[tuple[re.Pattern[str], float]] = [(_USD, usd_rate), (_UAH, 1), (_THOUSANDS, 1000), (_LABELLED, 1)]
-    for pattern, mult in candidates:
+    """Monthly rent in UAH and the raw matched text, or (None, None).
+
+    The earliest plausible amount wins; amounts right after "депозит/застава/комунальні" are skipped.
+    """
+    candidates: list[tuple[int, int, str]] = []
+    for pattern, mult in [(_USD, usd_rate), (_UAH, 1), (_THOUSANDS, 1000), (_LABELLED, 1)]:
         for m in pattern.finditer(text):
+            if _NOT_RENT.search(text[max(0, m.start() - 30):m.start()]):
+                continue
             num = m.group("n") or m.groupdict().get("m")
             if pattern is _THOUSANDS:
                 value = round(float(num.replace(",", ".")) * mult)
             else:
                 value = round(_int(num) * mult)
             if PRICE_MIN_UAH <= value <= PRICE_MAX_UAH:
-                return value, m.group(0).strip()
-    return None, None
+                candidates.append((m.start(), value, m.group(0).strip()))
+    if not candidates:
+        return None, None
+    _, value, raw = min(candidates)
+    return value, raw
 
 
 _ROOMS_DIGIT = re.compile(r"(?<!\d)([1-9])\s*(?:-\s*)?(?:х\s*)?(?:кімн|кім\b|комн|к(?![а-яіїєґa-z])|room)", _I)

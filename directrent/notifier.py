@@ -10,7 +10,7 @@ from datetime import UTC, datetime, timedelta
 import asyncpg
 from aiogram import Bot
 from aiogram.enums import ParseMode
-from aiogram.exceptions import TelegramAPIError, TelegramForbiddenError, TelegramRetryAfter
+from aiogram.exceptions import TelegramForbiddenError, TelegramRetryAfter
 from aiogram.types import BufferedInputFile, LinkPreviewOptions
 
 from directrent.bot.cards import CardData, card_keyboard, render_caption
@@ -114,7 +114,7 @@ class Notifier:
                     await c.execute("UPDATE users SET paused = true WHERE tg_id = $1", row.user_id)
                 log.info(json.dumps({"event": "user_blocked_bot", "user_id": row.user_id}))
                 return
-            except TelegramAPIError as e:
+            except Exception as e:  # noqa: BLE001 - TelegramAPIError or anything unexpected: count an attempt
                 attempts = row.attempts + 1
                 status = "failed" if attempts >= SEND_RETRIES else "pending"
                 async with self.pool.acquire() as c:
@@ -136,4 +136,6 @@ class Notifier:
             if not rows:
                 await asyncio.sleep(0.5)
                 continue
-            await asyncio.gather(*(self.send_one(r) for r in rows))
+            for r in await asyncio.gather(*(self.send_one(r) for r in rows), return_exceptions=True):
+                if isinstance(r, Exception):
+                    log.error(json.dumps({"event": "send_one_crashed", "error": f"{type(r).__name__}: {r}"}))

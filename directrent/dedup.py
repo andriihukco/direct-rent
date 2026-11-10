@@ -5,11 +5,13 @@ import asyncpg
 import imagehash
 from PIL import Image, UnidentifiedImageError
 
-from directrent.models import Listing
+from directrent.models import Contact, Listing
 
 PHASH_MAX_DISTANCE = 6
 PRICE_TOLERANCE = 0.05
 WINDOW = "30 days"
+# Kinds that identify one person. Text @handles are too often channel or admin handles to link flats.
+STRONG_KINDS = {"phone", "tg_user_id", "olx_user_id"}
 _MASK = (1 << 64) - 1
 
 
@@ -36,10 +38,20 @@ async def seen(conn: asyncpg.Connection, source: str, source_id: str) -> bool:
     )
 
 
-async def find_or_create_object(conn: asyncpg.Connection, listing: Listing) -> int:
-    """Spec §7.2: join an object that shares a contact (30 days) by photo hash, then by rooms+price."""
+def _same_rooms(a: int | None, b: int | None) -> bool:
+    return a == b  # both unknown counts as the same
+
+
+async def find_or_create_object(conn: asyncpg.Connection, listing: Listing,
+                                contacts: list[Contact] | None = None) -> int:
+    """Spec §7.2: join an object that shares a contact (30 days) by photo hash, then by rooms+price.
+
+    `contacts` overrides listing.contacts (the pipeline passes them without channel signatures).
+    Only strong contact kinds link listings.
+    """
+    keys = [c for c in (listing.contacts if contacts is None else contacts) if c.kind in STRONG_KINDS]
     rows = []
-    if listing.contacts:
+    if keys:
         rows = await conn.fetch(
             f"""SELECT DISTINCT l.object_id, l.photo_hash, l.price_uah, l.rooms, l.ingested_at
                 FROM listings l
@@ -48,13 +60,13 @@ async def find_or_create_object(conn: asyncpg.Connection, listing: Listing) -> i
                 JOIN unnest($1::text[], $2::text[]) AS x(kind, value) ON c.kind = x.kind AND c.value = x.value
                 WHERE l.object_id IS NOT NULL AND l.ingested_at > now() - interval '{WINDOW}'
                 ORDER BY l.ingested_at DESC""",
-            [c.kind for c in listing.contacts], [c.value for c in listing.contacts],
+            [c.kind for c in keys], [c.value for c in keys],
         )
     if listing.photo_hash is not None:
         for r in rows:
             if r["photo_hash"] is not None and _distance(r["photo_hash"], listing.photo_hash) <= PHASH_MAX_DISTANCE:
                 return r["object_id"]
     for r in rows:
-        if listing.rooms is not None and r["rooms"] == listing.rooms and _close_price(r["price_uah"], listing.price_uah):
+        if _same_rooms(r["rooms"], listing.rooms) and _close_price(r["price_uah"], listing.price_uah):
             return r["object_id"]
     return await conn.fetchval("INSERT INTO objects (photo_hash) VALUES ($1) RETURNING id", listing.photo_hash)

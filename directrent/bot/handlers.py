@@ -16,7 +16,7 @@ from directrent.models import DISTRICTS, Filter
 GREETING = ("Привіт! Я надсилаю нові оголошення про оренду квартир у Львові — тільки від власників, "
             "без рієлторів і комісії.\n\nНалаштуймо фільтр.")
 ASK_DISTRICTS = "Оберіть райони (можна кілька) і натисніть «Далі»:"
-ASK_BUDGET = "Бюджет на місяць у гривнях. Наприклад: 10000-18000, до 18000 або від 10000:"
+ASK_BUDGET = "Бюджет на місяць у гривнях. Наприклад: 10000-18000, до 18000, від 10000 або «будь-який»:"
 BAD_BUDGET = "Не зрозумів. Приклад: 10000-18000"
 ASK_ROOMS = "Скільки кімнат? Можна кілька або жодної — тоді будь-яка кількість:"
 ASK_PETS = "Вам потрібна квартира, де дозволені тварини?"
@@ -73,6 +73,7 @@ def build_router(pool: asyncpg.Pool) -> Router:
     async def on_start(message: Message, state: FSMContext) -> None:
         async with pool.acquire() as c:
             await repo.upsert_user(c, message.from_user.id, message.from_user.username)
+            await repo.set_paused(c, message.from_user.id, False)  # e.g. after unblocking the bot
         await message.answer(GREETING)
         await start_form(message, state, message.from_user.id)
 
@@ -99,7 +100,7 @@ def build_router(pool: asyncpg.Pool) -> Router:
             await cb.message.edit_reply_markup(reply_markup=districts_kb(selected))
         await cb.answer()
 
-    @router.message(FilterForm.budget, F.text)
+    @router.message(FilterForm.budget, F.text, ~F.text.startswith("/"))
     async def on_budget(message: Message, state: FSMContext) -> None:
         try:
             lo, hi = parse_budget(message.text)

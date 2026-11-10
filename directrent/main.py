@@ -5,12 +5,11 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-import anthropic
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from telethon import TelegramClient
 
-from directrent.antibroker.llm import DailyBudget, HaikuClassifier
+from directrent.antibroker.llm import DailyBudget, HaikuClassifier, make_llm_client
 from directrent.antibroker.pipeline import process
 from directrent.bot.admin import build_admin_router
 from directrent.bot.handlers import build_router
@@ -46,7 +45,7 @@ async def main() -> None:
 
     client = make_telethon(s)
     queue: asyncio.Queue[RawPost] = asyncio.Queue(maxsize=1000)
-    llm = HaikuClassifier(anthropic.AsyncAnthropic(api_key=s.anthropic_api_key.get_secret_value()))
+    llm = HaikuClassifier(make_llm_client(s.anthropic_api_key.get_secret_value()))
     budget = DailyBudget(s.llm_daily_max_calls)
     notifier = Notifier(bot, pool)
 

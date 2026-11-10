@@ -84,6 +84,15 @@ def _parse(data: Any) -> LlmResult:
         raise LlmError(f"invalid tool input: {e}") from e
 
 
+LLM_TIMEOUT_S = 15.0
+MAX_TOKENS = 1024  # thinking is on by default on Haiku 5.5 and shares this cap
+
+
+def make_llm_client(api_key: str) -> anthropic.AsyncAnthropic:
+    """Short timeout and one SDK retry: the pipeline has one worker and must not stall on a slow call."""
+    return anthropic.AsyncAnthropic(api_key=api_key, timeout=LLM_TIMEOUT_S, max_retries=1)
+
+
 class HaikuClassifier:
     def __init__(self, client: anthropic.AsyncAnthropic, model: str = MODEL):
         self.client, self.model = client, model
@@ -92,7 +101,7 @@ class HaikuClassifier:
         try:
             response = await self.client.messages.create(
                 model=self.model,
-                max_tokens=300,
+                max_tokens=MAX_TOKENS,
                 system=SYSTEM,
                 tools=[TOOL],
                 tool_choice={"type": "tool", "name": TOOL_NAME},

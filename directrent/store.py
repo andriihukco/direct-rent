@@ -7,7 +7,8 @@ import asyncpg
 from directrent.models import Decision, Listing
 
 
-async def save_listing(conn: asyncpg.Connection, listing: Listing, object_id: int, decision: Decision) -> int:
+async def save_listing(conn: asyncpg.Connection, listing: Listing, object_id: int | None,
+                       decision: Decision) -> int:
     listing_id = await conn.fetchval(
         """INSERT INTO listings (source, source_id, url, object_id, text, channel_title, price_uah, price_raw,
                rooms, district, street, pets, posted_at, verdict, verdict_stage, verdict_reason, llm_confidence,

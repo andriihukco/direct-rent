@@ -12,12 +12,14 @@ from telethon import TelegramClient
 
 from directrent.antibroker.llm import DailyBudget, HaikuClassifier
 from directrent.antibroker.pipeline import process
+from directrent.bot.admin import build_admin_router
 from directrent.bot.handlers import build_router
 from directrent.config import Settings, get_settings
 from directrent.db import create_pool, migrate
 from directrent.logs import setup_logging
 from directrent.models import RawPost
 from directrent.notifier import Notifier
+from directrent.retention import purge
 from directrent.sources.telegram import TelegramSource, mark_processed
 from directrent.supervisor import supervise
 
@@ -39,6 +41,7 @@ async def main() -> None:
 
     bot = Bot(s.bot_token.get_secret_value())
     dp = Dispatcher(storage=MemoryStorage())
+    dp.include_router(build_admin_router(pool, s.admin_tg_id))
     dp.include_router(build_router(pool))
 
     client = make_telethon(s)
@@ -61,10 +64,17 @@ async def main() -> None:
             except Exception:  # noqa: BLE001 - one bad post must not stop the worker
                 log.exception(json.dumps({"event": "process_failed", "source_id": raw.source_id}))
 
+    async def retention() -> None:
+        while True:
+            async with pool.acquire() as c:
+                log.info(json.dumps({"event": "retention", "listings_deleted": await purge(c)}))
+            await asyncio.sleep(24 * 3600)
+
     async def polling() -> None:
         await dp.start_polling(bot, handle_signals=False)
 
-    tasks = {"telegram": telegram, "pipeline": pipeline, "notifier": notifier.run, "bot": polling}
+    tasks = {"telegram": telegram, "pipeline": pipeline, "notifier": notifier.run, "bot": polling,
+             "retention": retention}
     log.info(json.dumps({"event": "started", "tasks": list(tasks), "channels": s.tg_channels}))
     try:
         await asyncio.gather(*(supervise(name, fn) for name, fn in tasks.items()))

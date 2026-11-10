@@ -1,0 +1,2 @@
+# expect: price=11000 rooms=1 district=none pets=unknown
+Здам однокімнатну квартиру, 11 000 грн, довгостроково. 0680000007

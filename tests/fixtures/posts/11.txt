@@ -1,0 +1,2 @@
+# expect: price=13000 rooms=1 district=Шевченківський pets=yes
+1 кімн. квартира, Голоско, 13000грн, з тваринами ок. @lviv_rent_owner

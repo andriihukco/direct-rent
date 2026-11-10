@@ -2,7 +2,7 @@
 .env
 data/
 *.session
-spikes/
+/spikes/
 .venv/
 __pycache__/
 *.pyc

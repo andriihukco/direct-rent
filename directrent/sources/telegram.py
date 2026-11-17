@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import asyncpg
 from telethon import TelegramClient, events, utils
+from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.tl.types import PeerUser
 
 from directrent.models import Contact, RawPost
@@ -109,6 +110,10 @@ class TelegramSource:
         entities = []
         for name in self.channels:
             ent = await self.client.get_entity(name)
+            if getattr(ent, "left", False):
+                # Telegram sends live updates only to members (the account must join each channel/group).
+                await self.client(JoinChannelRequest(ent))
+                log.info(json.dumps({"event": "joined", "channel": name}))
             self._names[ent.id] = (getattr(ent, "username", None) or name, getattr(ent, "title", name))
             entities.append(ent)
 

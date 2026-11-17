@@ -32,6 +32,14 @@ MIN_LETTERS = 3
 _RENTAL = re.compile(r"здам|зда[єю]т|здаєть|оренд|аренд|сда[мюёе]|сдаёт|квартир|кімнат|комнат|житл|будин|дом\b", _I)
 EMPTY = Decision(Verdict.REJECT, "rules", "empty")
 NOT_LISTING = Decision(Verdict.REJECT, "rules", "not_listing")
+WANTED = Decision(Verdict.REJECT, "rules", "wanted")
+
+# Someone looking for a flat, not offering one. "Шукаю орендарів" (looking for tenants) is an owner,
+# so a search verb followed by a tenant word does not count, and neither does any post that offers a flat.
+_SEEKING = re.compile(
+    r"(?<![а-яіїєґ])(?:шука[юєєм]\w*|ищ[уеё]\w*|сниму|снимем|зніму|знімемо|винайм\w*|орендую|орендуємо)"
+    r"(?!\s+(?:\w+\s+)?(?:орендар|квартирант|наймач|жильц|жильц|арендатор|порядн))", _I)
+_OFFERING = re.compile(r"(?<![а-яіїєґ])(?:здам|здаю|здаємо|здає\w*|сдам|сдаю|сдаём|сдаем|сда[её]тся|пропону\w*)", _I)
 
 
 def is_empty(text: str) -> bool:
@@ -39,9 +47,11 @@ def is_empty(text: str) -> bool:
 
 
 def pre_screen(text: str, has_price: bool, has_rooms: bool, has_photo: bool) -> Decision | None:
-    """Drop chatter before it creates an object or reaches the LLM ('Так, ще актуально', photo-only)."""
+    """Drop chatter and 'looking for a flat' posts before they create an object or reach the LLM."""
     if is_empty(text):
         return EMPTY
+    if _SEEKING.search(text) and not _OFFERING.search(text):
+        return WANTED
     if not (has_price or has_rooms or has_photo or _RENTAL.search(text)):
         return NOT_LISTING
     return None

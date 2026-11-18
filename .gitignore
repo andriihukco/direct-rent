@@ -7,3 +7,5 @@ data/
 __pycache__/
 *.pyc
 .pytest_cache/
+.supabase.local.env
+supabase/.temp/

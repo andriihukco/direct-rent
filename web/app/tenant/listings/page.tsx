@@ -17,7 +17,7 @@ export default async function TenantListings() {
         <nav><Link href="/tenant">Мій профіль</Link></nav>
       </header>
       {!listings || listings.length === 0 ? (
-        <p className="muted">Поки немає оголошень. Щойно з'являться нові, вони зʼявляться тут.</p>
+        <p className="muted">Поки немає оголошень. Щойно з&apos;являться нові, вони зʼявляться тут.</p>
       ) : (
         <ul className="list">
           {listings.map((l) => (

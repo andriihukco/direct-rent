@@ -55,7 +55,10 @@ export default async function OwnerPage() {
                 <div className="muted">{f.rooms === 3 ? "3+" : f.rooms}-кімн · {f.district}</div>
                 <div className="why">{f.rules.map((r: string) => <span key={r} className="tag">{RULES.find((x) => x.id === r)?.label ?? r}</span>)}</div>
                 <div className="photos">
-                  {urls.filter(Boolean).map((u, i) => <img key={i} src={u!} alt="" />)}
+                  {urls.filter(Boolean).map((u, i) => (
+                    // eslint-disable-next-line @next/next/no-img-element -- signed Supabase URLs, not optimizable
+                    <img key={i} src={u!} alt="" />
+                  ))}
                 </div>
                 <PhotoUpload flatId={f.id} userId={user.id} />
                 <form action={async () => { "use server"; await deleteFlat(f.id); }}>
